@@ -8,7 +8,8 @@ Welcome to **Taille-Main**, the main server responsible for allowing Irish taxis
 - **Tech Stack**:  
   - [Rust](https://www.rust-lang.org/)  
   - [Actix-Web](https://actix.rs/)  
-- **Database**: Not yet integrated (subject to change in future versions).  
+- **Database**:
+  - [PostgreSQL](https://www.postgresql.org)  
 - **Open Source**: The project remains open source to encourage community collaboration and transparency. 
 
 ## Creating Users
