@@ -77,7 +77,7 @@ pub mod tests {
   use std::sync::RwLock;
 
   pub struct UserRepositoryMock {
-    users: RwLock<Vec<User>>,
+    pub users: RwLock<Vec<User>>,
   }
 
   impl UserRepositoryMock {

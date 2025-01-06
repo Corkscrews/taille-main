@@ -1,5 +1,6 @@
 mod shared;
 mod users;
+mod helpers;
 
 use std::sync::Arc;
 
@@ -68,9 +69,7 @@ fn config<UR: UserRepository + 'static>(
 mod tests {
   use super::*;
   use actix_web::{http::header::HeaderValue, test, App};
-  use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-  use nanoid::nanoid;
-  use serde::{Deserialize, Serialize};
+  use helpers::tests::create_fake_access_token;
   use shared::{
     repository::user_repository::tests::UserRepositoryMock, role::Role,
   };
@@ -159,28 +158,4 @@ mod tests {
     assert_eq!(get_user_rto.uuid, create_user_rto.uuid);
   }
 
-  #[derive(Serialize, Deserialize)]
-  struct FakeAccessTokenClaims {
-    uuid: String,
-    role: Role,
-    sub: String,
-    iat: u64,
-    exp: u64,
-  }
-
-  fn create_fake_access_token(jwt_secret: &str) -> String {
-    let fake_claims = FakeAccessTokenClaims {
-      uuid: nanoid!(),
-      role: Role::Manager,
-      sub: String::from("foo"),
-      iat: 0,
-      exp: 253402300799,
-    };
-    encode(
-      &Header::new(Algorithm::HS256),
-      &fake_claims,
-      &EncodingKey::from_secret(jwt_secret.as_ref()),
-    )
-    .unwrap()
-  }
 }

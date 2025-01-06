@@ -7,11 +7,9 @@ edition = "2021"
 actix-web = "4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-validator = "0.16"
-validator_derive = "0.16"    # for the `#[derive(Validate)]` macro
-
-# For hashing with Bcrypt
-bcrypt = "0.14"
+validator = "0.19"
+validator_derive = "0.19"
+bcrypt = "0.16"
 jsonwebtoken = "9.3.0"
 actix-web-lab = "0.23.0"
 actix-governor = "0.8.0"
@@ -20,6 +18,7 @@ subtle = "2.6.1"
 nanoid = "0.4.0"
 sqlx = { version = "0.8.3", features = ["runtime-tokio", "tls-native-tls", "postgres"] }
 thiserror = "2.0.9"
+fake = "3.1.0"
 
 [dev-dependencies]
 actix-rt = "2.10.0"

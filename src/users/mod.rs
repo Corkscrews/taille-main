@@ -1,4 +1,5 @@
 pub mod dto;
+pub mod model;
 pub mod rto;
 
 use actix_web::http::header;
@@ -6,12 +7,13 @@ use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use dto::create_user_dto::CreateUserDTO;
 use dto::get_user_dto::GetUserDTO;
 use jsonwebtoken::{decode, DecodingKey, Validation};
+use model::access_token_claims::AccessTokenClaims;
 use nanoid::nanoid;
 use rto::create_user_rto::CreateUserRTO;
 use rto::get_user_rto::GetUserRTO;
-use serde::{Deserialize, Serialize};
 use validator::Validate;
 
+use crate::shared::http_error::HttpError;
 use crate::shared::model::user::User;
 use crate::shared::repository::user_repository::UserRepository;
 use crate::shared::role::Role;
@@ -60,7 +62,6 @@ pub async fn create_user<UR: UserRepository + 'static>(
   payload: web::Json<CreateUserDTO>,
   request: HttpRequest,
 ) -> impl Responder {
-
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
   let auth = find_auth_user::<UR>(request, &data).await;
@@ -86,30 +87,19 @@ pub async fn create_user<UR: UserRepository + 'static>(
       println!("{}", error);
       HttpResponse::InternalServerError().finish()
     })
-  
-}
-
-impl From<CreateUserDTO> for User {
-  fn from(dto: CreateUserDTO) -> Self {
-    Self {
-      uuid: nanoid!(),
-      user_name: dto.user_name,
-      role: dto.role
-    }
-  }
 }
 
 // TODO: shouldn't this be an middleware?
 fn invalid_auth_header() -> HttpResponse {
   HttpResponse::BadRequest()
     .content_type("application/json")
-    .body(r#"{"message": "Invalid Authorization header"}"#)
+    .json(HttpError::from("Invalid Authorization header"))
 }
 
 fn user_not_found() -> HttpResponse {
   HttpResponse::NotFound()
     .content_type("application/json")
-    .body(r#"{"message": "User not found"}"#)
+    .json(HttpError::from("User not found"))
 }
 
 async fn find_auth_user<UR: UserRepository + 'static>(
@@ -140,6 +130,16 @@ async fn find_auth_user<UR: UserRepository + 'static>(
   Some(decode_result.claims)
 }
 
+impl From<CreateUserDTO> for User {
+  fn from(dto: CreateUserDTO) -> Self {
+    Self {
+      uuid: nanoid!(),
+      user_name: dto.user_name,
+      role: dto.role,
+    }
+  }
+}
+
 // Transform User domain to RTO
 impl From<User> for GetUserRTO {
   fn from(user: User) -> Self {
@@ -154,42 +154,143 @@ impl From<User> for GetUserRTO {
 // Transform User domain to RTO
 impl From<User> for CreateUserRTO {
   fn from(user: User) -> Self {
-    Self {
-      uuid: user.uuid
-    }
+    Self { uuid: user.uuid }
   }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct AccessTokenClaims {
-  uuid: String,
-  role: Role,
-  exp: usize,
-  iat: usize,
-}
+#[cfg(test)]
+mod tests {
+  use std::sync::RwLock;
 
-// impl User {
-//   pub fn is_user_allowed(&self, user: &User) -> bool {
-//     if self.uuid == user.uuid {
-//       return true;
-//     }
-//     if self.role == Role::Admin {
-//       return true;
-//     }
-//     // TODO: Handle other cases, role based.
-//     false
-//   }
-// }
+  use actix_web::http::StatusCode;
+  use nanoid::nanoid;
 
-impl AccessTokenClaims {
-  pub fn is_user_allowed(&self, user: &User) -> bool {
-    if self.uuid == user.uuid {
-      return true;
-    }
-    if self.role == Role::Admin || self.role == Role::Manager {
-      return true;
-    }
-    // TODO: Handle other cases, role based.
-    false
+  use crate::{helpers::tests::{http_request, parse_http_response}, shared::{
+    config::Config, repository::user_repository::tests::UserRepositoryMock,
+  }};
+
+  use super::*;
+
+  #[actix_web::test]
+  async fn test_get_user_successful() {
+    let jwt_secret = nanoid!();
+    let uuid = nanoid!();
+
+    let user = User {
+      uuid: uuid.clone(),
+      user_name: "John Doe".to_string(),
+      role: Role::Admin,
+    };
+
+    let app_state = AppState {
+      user_repository: UserRepositoryMock { 
+        users: RwLock::new(vec![user])
+       },
+      config: Config {
+        master_key: nanoid!(),
+        jwt_secret: jwt_secret.clone(),
+      },
+    };
+
+    let request: HttpRequest = http_request(&jwt_secret);
+
+    let responder = get_user(
+      web::Data::new(app_state), 
+      web::Path::from(GetUserDTO { uuid: uuid.clone() }), 
+      request.clone()
+    ).await;
+
+    let rto: GetUserRTO = parse_http_response(
+      responder, 
+      &request, 
+      StatusCode::OK
+    ).await;
+
+    // Assertions
+    assert_eq!(rto.user_name, "John Doe");
+    assert_eq!(rto.role, Role::Admin);
+    assert_eq!(rto.uuid, uuid);
   }
+
+  #[actix_web::test]
+  async fn test_get_user_uuid_not_found() {
+    let jwt_secret = nanoid!();
+    let uuid = nanoid!();
+
+    let user = User {
+      uuid: uuid.clone(),
+      user_name: "John Doe".to_string(),
+      role: Role::Admin,
+    };
+
+    let app_state = AppState {
+      user_repository: UserRepositoryMock { 
+        users: RwLock::new(vec![user])
+       },
+      config: Config {
+        master_key: nanoid!(),
+        jwt_secret: jwt_secret.clone(),
+      },
+    };
+
+    let request: HttpRequest = http_request(&jwt_secret);
+
+    let responder = get_user(
+      web::Data::new(app_state), 
+      web::Path::from(GetUserDTO { uuid: nanoid!() }), 
+      request.clone()
+    ).await;
+
+    let rto: HttpError = parse_http_response(
+      responder, 
+      &request, 
+      StatusCode::NOT_FOUND
+    ).await;
+
+    // Assertions
+    assert_eq!(rto.message, "User not found");
+  }
+
+  #[test]
+  fn test_create_user_dto_to_user() {
+    let dto = CreateUserDTO {
+      user_name: "test_user".to_string(),
+      role: Role::Admin,
+    };
+
+    let user: User = dto.clone().into();
+
+    assert_eq!(user.user_name, dto.user_name);
+    assert_eq!(user.role, dto.role);
+    assert!(!user.uuid.is_empty()); // Ensure UUID is generated
+  }
+
+  #[test]
+  fn test_user_to_get_user_rto() {
+    let user = User {
+      uuid: "test_uuid".to_string(),
+      user_name: "test_user".to_string(),
+      role: Role::Admin,
+    };
+
+    let rto: GetUserRTO = user.clone().into();
+
+    assert_eq!(rto.uuid, user.uuid);
+    assert_eq!(rto.user_name, user.user_name);
+    assert_eq!(rto.role, user.role);
+  }
+
+  #[test]
+  fn test_user_to_create_user_rto() {
+    let user = User {
+      uuid: "test_uuid".to_string(),
+      user_name: "test_user".to_string(),
+      role: Role::Admin,
+    };
+
+    let rto: CreateUserRTO = user.clone().into();
+
+    assert_eq!(rto.uuid, user.uuid);
+  }
+
 }

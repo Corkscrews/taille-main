@@ -3,7 +3,7 @@ use validator_derive::Validate;
 
 use crate::shared::role::Role;
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct CreateUserDTO {
   #[serde(rename = "userName")]
   pub user_name: String,
