@@ -19,7 +19,7 @@ COPY . ./
 RUN cargo build --release
 
 # Expose the server port
-EXPOSE 3000
+EXPOSE 3001
 
 # Command to run the application
 CMD ["./target/release/taille-main"]
