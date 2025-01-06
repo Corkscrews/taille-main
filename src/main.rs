@@ -1,10 +1,14 @@
-mod config;
 mod shared;
 mod users;
+mod config;
+mod database;
+
+use std::sync::Arc;
 
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer};
 use config::Config;
+use database::Database;
 use shared::repository::user_repository::{UserRepository, UserRepositoryImpl};
 use users::{create_user, get_user};
 
@@ -18,14 +22,24 @@ struct AppState<UR: UserRepository> {
 async fn main() -> std::io::Result<()> {
   let server_address = "127.0.0.1:3001";
   println!("Listening on http://{}", server_address);
-  HttpServer::new(|| App::new().configure(config))
+
+  let database = Database::new().await;
+  let database = Arc::new(database);
+
+  HttpServer::new(move || App::new().configure(|cfg| {
+    let user_repository = UserRepositoryImpl::new(database.clone());
+    config(cfg, user_repository)
+  }))
     .bind(server_address)?
     .run()
     .await
 }
 
 // Function to initialize the App
-fn config(config: &mut web::ServiceConfig) {
+fn config<UR: UserRepository + 'static>(
+  config: &mut web::ServiceConfig, 
+  user_repository: UR,
+) {
   // Rate limit
   // Allow bursts with up to five requests per IP address
   // and replenishes two elements per second
@@ -36,16 +50,20 @@ fn config(config: &mut web::ServiceConfig) {
     .unwrap();
 
   config
-    .app_data(web::Data::new(AppState {
-      user_repository: UserRepositoryImpl::new(),
-      config: Config::default(),
-    }))
+    .app_data(
+      web::Data::new(
+        AppState {
+          user_repository,
+          config: Config::default(),
+        }
+      )
+    )
     .service(
       web::scope("/v1").service(
         web::scope("/users")
           .wrap(Governor::new(&governor_config))
-          .route("/{id}", web::get().to(get_user::<UserRepositoryImpl>))
-          .route("", web::post().to(create_user::<UserRepositoryImpl>)),
+          .route("/{uuid}", web::get().to(get_user::<UR>))
+          .route("", web::post().to(create_user::<UR>)),
       ),
     );
 }
@@ -56,8 +74,8 @@ mod tests {
   use actix_web::{http::header::HeaderValue, test, App};
   use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
   use serde::{Deserialize, Serialize};
-  use shared::role::Role;
-  use users::rto::create_user_rto::CreateUserRTO;
+  use shared::{repository::user_repository::tests::UserRepositoryMock, role::Role};
+  use users::rto::{create_user_rto::CreateUserRTO, get_user_rto::GetUserRTO};
   use std::{env, net::SocketAddr, str::FromStr};
   use nanoid::nanoid;
 
@@ -70,7 +88,10 @@ mod tests {
 
     // Initialize the service in-memory
     let app = test::init_service(
-      App::new().configure(config), // your config function
+      App::new().configure(|cfg| {
+        let user_repository = UserRepositoryMock::new();
+        config(cfg, user_repository)
+      }), // your config function
     )
     .await;
 
@@ -87,7 +108,7 @@ mod tests {
       .peer_addr(SocketAddr::from_str("127.0.0.1:12345").unwrap())
       .append_header((
         actix_web::http::header::AUTHORIZATION,
-        authorization_header.clone(),
+        authorization_header.clone()
       ))
       .append_header((
         actix_web::http::header::CONTENT_TYPE,
@@ -96,7 +117,7 @@ mod tests {
       .set_json(serde_json::json!({
           "userName": "testuser",
           "password": "testpassword",
-          "role": "driver"
+          "role": Role::Driver
       }))
       .to_request();
 
@@ -110,16 +131,16 @@ mod tests {
       .expect("Response body should be valid UTF-8");
 
     // Deserialize the JSON response into your struct
-    let create_user_res: CreateUserRTO = serde_json::from_str(create_body_str)
+    let create_user_rto: CreateUserRTO = serde_json::from_str(create_body_str)
       .expect("Failed to parse response JSON");
 
     // 2) Get user
-    let login_req = test::TestRequest::get()
-      .uri(&format!("/v1/users/{}", create_user_res.uuid))
+    let get_user_req = test::TestRequest::get()
+      .uri(&format!("/v1/users/{}", create_user_rto.uuid))
       .peer_addr(SocketAddr::from_str("127.0.0.1:12345").unwrap())
       .append_header((
         actix_web::http::header::AUTHORIZATION,
-        authorization_header,
+        authorization_header
       ))
       .append_header((
         actix_web::http::header::CONTENT_TYPE,
@@ -127,12 +148,18 @@ mod tests {
       ))
       .to_request();
 
-    let login_resp = test::call_service(&app, login_req).await;
-    assert!(login_resp.status().is_success(), "Login failed");
+    let get_user_resp = test::call_service(&app, get_user_req).await;
+    assert!(get_user_resp.status().is_success(), "Get user failed");
 
-    let body_bytes = test::read_body(login_resp).await;
-    let body_str = String::from_utf8(body_bytes.to_vec()).unwrap();
-    println!("Login response: {}", body_str);
+    // Use the Actix Web test helper to read the response body
+    let get_user_body_bytes = test::read_body(get_user_resp).await;
+    let get_user_body_str = std::str::from_utf8(&get_user_body_bytes)
+      .expect("Response body should be valid UTF-8");
+
+    // Deserialize the JSON response into your struct
+    let get_user_rto: GetUserRTO = serde_json::from_str(get_user_body_str)
+      .expect("Failed to parse response JSON");
+    assert_eq!(get_user_rto.uuid, create_user_rto.uuid);
   }
 
   #[derive(Serialize, Deserialize)]

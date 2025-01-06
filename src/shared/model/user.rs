@@ -1,6 +1,6 @@
 use crate::shared::role::Role;
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct User {
   pub uuid: String,
   pub user_name: String,

@@ -38,7 +38,7 @@ This project is still in the early stages:
   cargo run
   ```
 
-4. **Run tests
+4. **Run tests**
   ```bash
   cargo test
   ```

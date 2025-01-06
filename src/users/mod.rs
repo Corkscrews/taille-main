@@ -17,7 +17,6 @@ use crate::shared::repository::user_repository::UserRepository;
 use crate::shared::role::Role;
 use crate::AppState;
 
-// #[post("login")]
 pub async fn get_user<UR: UserRepository + 'static>(
   data: web::Data<AppState<UR>>,
   path: web::Path<GetUserDTO>,
@@ -73,12 +72,21 @@ pub async fn create_user<UR: UserRepository + 'static>(
     return HttpResponse::Forbidden().body("Forbidden");
   }
 
-  let user = data.user_repository.create(User::from(payload.0)).await;
-
-  HttpResponse::Created()
-    .content_type("application/json")
-    .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
-    .json(CreateUserRTO::from(user))
+  data
+    .user_repository
+    .create(User::from(payload.0))
+    .await
+    .map(|user| {
+      HttpResponse::Created()
+        .content_type("application/json")
+        .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
+        .json(CreateUserRTO::from(user))
+    })
+    .unwrap_or_else(|error| {
+      println!("{}", error);
+      HttpResponse::InternalServerError().finish()
+    })
+  
 }
 
 impl From<CreateUserDTO> for User {
@@ -93,7 +101,9 @@ impl From<CreateUserDTO> for User {
 
 // TODO: shouldn't this be an middleware?
 fn invalid_auth_header() -> HttpResponse {
-  HttpResponse::BadRequest().body("Invalid Authorization header")
+  HttpResponse::BadRequest()
+    .content_type("application/json")
+    .body(r#"{"message": "Invalid Authorization header"}"#)
 }
 
 fn user_not_found() -> HttpResponse {
@@ -138,6 +148,7 @@ impl From<User> for GetUserRTO {
     Self {
       uuid: user.uuid,
       user_name: user.user_name,
+      role: user.role,
     }
   }
 }
@@ -177,7 +188,7 @@ impl AccessTokenClaims {
     if self.uuid == user.uuid {
       return true;
     }
-    if self.role == Role::Admin {
+    if self.role == Role::Admin || self.role == Role::Manager {
       return true;
     }
     // TODO: Handle other cases, role based.
