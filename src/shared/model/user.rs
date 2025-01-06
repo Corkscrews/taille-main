@@ -4,5 +4,5 @@ use crate::shared::role::Role;
 pub struct User {
   pub uuid: String,
   pub user_name: String,
-  pub role: Role
+  pub role: Role,
 }

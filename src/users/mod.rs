@@ -6,11 +6,11 @@ use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use dto::create_user_dto::CreateUserDTO;
 use dto::get_user_dto::GetUserDTO;
 use jsonwebtoken::{decode, DecodingKey, Validation};
+use nanoid::nanoid;
 use rto::create_user_rto::CreateUserRTO;
 use rto::get_user_rto::GetUserRTO;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
-use nanoid::nanoid;
 
 use crate::shared::model::user::User;
 use crate::shared::repository::user_repository::UserRepository;
@@ -60,7 +60,6 @@ pub async fn create_user<UR: UserRepository + 'static>(
   payload: web::Json<CreateUserDTO>,
   request: HttpRequest,
 ) -> impl Responder {
-
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
   let auth = find_auth_user::<UR>(request, &data).await;
@@ -86,7 +85,6 @@ pub async fn create_user<UR: UserRepository + 'static>(
       println!("{}", error);
       HttpResponse::InternalServerError().finish()
     })
-  
 }
 
 impl From<CreateUserDTO> for User {
@@ -94,7 +92,7 @@ impl From<CreateUserDTO> for User {
     Self {
       uuid: nanoid!(),
       user_name: dto.user_name,
-      role: dto.role
+      role: dto.role,
     }
   }
 }
@@ -156,9 +154,7 @@ impl From<User> for GetUserRTO {
 // Transform User domain to RTO
 impl From<User> for CreateUserRTO {
   fn from(user: User) -> Self {
-    Self {
-      uuid: user.uuid
-    }
+    Self { uuid: user.uuid }
   }
 }
 

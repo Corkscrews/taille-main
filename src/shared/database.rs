@@ -9,7 +9,9 @@ pub struct Database {
 impl Database {
   pub async fn new() -> Self {
     let pool = prepare_pool().await;
-    Self { pool: Arc::new(pool) }
+    Self {
+      pool: Arc::new(pool),
+    }
   }
 }
 

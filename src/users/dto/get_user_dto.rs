@@ -3,5 +3,5 @@ use validator_derive::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct GetUserDTO {
-  pub uuid: String
+  pub uuid: String,
 }

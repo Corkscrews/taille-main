@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use sqlx::{postgres::PgRow, Pool, Postgres};
 use sqlx::Row;
+use sqlx::{postgres::PgRow, Pool, Postgres};
 use thiserror::Error;
 
-use crate::{database::Database, shared::model::user::User};
+use crate::{shared::database::Database, shared::model::user::User};
 
 #[derive(Debug, Error)]
 pub enum UserRepositoryError {
@@ -24,13 +24,13 @@ pub trait UserRepository {
 }
 
 pub struct UserRepositoryImpl {
-  pool: Arc<Pool<Postgres>>
+  pool: Arc<Pool<Postgres>>,
 }
 
 impl UserRepositoryImpl {
   pub fn new(database: Arc<Database>) -> Self {
     Self {
-      pool: database.pool.clone()
+      pool: database.pool.clone(),
     }
   }
 }
@@ -65,16 +65,16 @@ impl From<PgRow> for User {
     User {
       uuid: row.get("uuid"),
       user_name: row.get("user_name"),
-      role: serde_json::from_str(row.get("role")).unwrap()
+      role: serde_json::from_str(row.get("role")).unwrap(),
     }
   }
 }
 
 #[cfg(test)]
 pub mod tests {
-  use std::sync::RwLock;
-  use crate::shared::model::user::User;
   use super::{UserRepository, UserRepositoryError};
+  use crate::shared::model::user::User;
+  use std::sync::RwLock;
 
   pub struct UserRepositoryMock {
     users: RwLock<Vec<User>>,
@@ -89,7 +89,6 @@ pub mod tests {
   }
 
   impl UserRepository for UserRepositoryMock {
-
     async fn find_one(&self, uuid: String) -> Option<User> {
       let users = self.users.read().unwrap(); // Acquire read lock
       users.iter().find(|user| user.uuid == uuid).cloned()
@@ -100,7 +99,5 @@ pub mod tests {
       users.push(user.clone());
       Ok(user)
     }
-    
   }
-
 }

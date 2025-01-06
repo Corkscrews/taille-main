@@ -7,5 +7,5 @@ use crate::shared::role::Role;
 pub struct CreateUserDTO {
   #[serde(rename = "userName")]
   pub user_name: String,
-  pub role: Role
+  pub role: Role,
 }

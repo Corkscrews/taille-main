@@ -1,14 +1,12 @@
 mod shared;
 mod users;
-mod config;
-mod database;
 
 use std::sync::Arc;
 
 use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpServer};
-use config::Config;
-use database::Database;
+use shared::config::Config;
+use shared::database::Database;
 use shared::repository::user_repository::{UserRepository, UserRepositoryImpl};
 use users::{create_user, get_user};
 
@@ -26,18 +24,20 @@ async fn main() -> std::io::Result<()> {
   let database = Database::new().await;
   let database = Arc::new(database);
 
-  HttpServer::new(move || App::new().configure(|cfg| {
-    let user_repository = UserRepositoryImpl::new(database.clone());
-    config(cfg, user_repository)
-  }))
-    .bind(server_address)?
-    .run()
-    .await
+  HttpServer::new(move || {
+    App::new().configure(|cfg| {
+      let user_repository = UserRepositoryImpl::new(database.clone());
+      config(cfg, user_repository)
+    })
+  })
+  .bind(server_address)?
+  .run()
+  .await
 }
 
 // Function to initialize the App
 fn config<UR: UserRepository + 'static>(
-  config: &mut web::ServiceConfig, 
+  config: &mut web::ServiceConfig,
   user_repository: UR,
 ) {
   // Rate limit
@@ -50,14 +50,10 @@ fn config<UR: UserRepository + 'static>(
     .unwrap();
 
   config
-    .app_data(
-      web::Data::new(
-        AppState {
-          user_repository,
-          config: Config::default(),
-        }
-      )
-    )
+    .app_data(web::Data::new(AppState {
+      user_repository,
+      config: Config::default(),
+    }))
     .service(
       web::scope("/v1").service(
         web::scope("/users")
@@ -73,11 +69,13 @@ mod tests {
   use super::*;
   use actix_web::{http::header::HeaderValue, test, App};
   use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-  use serde::{Deserialize, Serialize};
-  use shared::{repository::user_repository::tests::UserRepositoryMock, role::Role};
-  use users::rto::{create_user_rto::CreateUserRTO, get_user_rto::GetUserRTO};
-  use std::{env, net::SocketAddr, str::FromStr};
   use nanoid::nanoid;
+  use serde::{Deserialize, Serialize};
+  use shared::{
+    repository::user_repository::tests::UserRepositoryMock, role::Role,
+  };
+  use std::{env, net::SocketAddr, str::FromStr};
+  use users::rto::{create_user_rto::CreateUserRTO, get_user_rto::GetUserRTO};
 
   #[actix_rt::test]
   async fn test_get_user_in_memory() {
@@ -95,12 +93,11 @@ mod tests {
     )
     .await;
 
-    let authorization_header = HeaderValue::from_str(
-      &format!(
-        "Bearer {}",
-        create_fake_access_token(&jwt_secret)
-      )
-    ).unwrap();
+    let authorization_header = HeaderValue::from_str(&format!(
+      "Bearer {}",
+      create_fake_access_token(&jwt_secret)
+    ))
+    .unwrap();
 
     // 1) Create user
     let create_req = test::TestRequest::post()
@@ -108,7 +105,7 @@ mod tests {
       .peer_addr(SocketAddr::from_str("127.0.0.1:12345").unwrap())
       .append_header((
         actix_web::http::header::AUTHORIZATION,
-        authorization_header.clone()
+        authorization_header.clone(),
       ))
       .append_header((
         actix_web::http::header::CONTENT_TYPE,
@@ -140,7 +137,7 @@ mod tests {
       .peer_addr(SocketAddr::from_str("127.0.0.1:12345").unwrap())
       .append_header((
         actix_web::http::header::AUTHORIZATION,
-        authorization_header
+        authorization_header,
       ))
       .append_header((
         actix_web::http::header::CONTENT_TYPE,
