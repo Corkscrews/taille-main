@@ -4,24 +4,24 @@ pub mod rto;
 
 use actix_web::http::header;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
-use dto::create_user_dto::CreateUserDTO;
-use dto::get_user_dto::GetUserDTO;
+use dto::create_user_dto::CreateUserDto;
+use dto::get_user_dto::GetUserDto;
 use jsonwebtoken::{decode, DecodingKey, Validation};
 use model::access_token_claims::AccessTokenClaims;
 use nanoid::nanoid;
-use rto::create_user_rto::CreateUserRTO;
-use rto::get_user_rto::GetUserRTO;
+use rto::get_user_rto::GetUserRto;
 use validator::Validate;
 
 use crate::shared::http_error::HttpError;
 use crate::shared::model::user::User;
 use crate::shared::repository::user_repository::UserRepository;
 use crate::shared::role::Role;
+use crate::shared::rto::created_rto::CreatedRto;
 use crate::AppState;
 
 pub async fn get_user<UR: UserRepository + 'static>(
   data: web::Data<AppState<UR>>,
-  path: web::Path<GetUserDTO>,
+  path: web::Path<GetUserDto>,
   request: HttpRequest,
 ) -> impl Responder {
   // Perform validation
@@ -54,12 +54,12 @@ pub async fn get_user<UR: UserRepository + 'static>(
 
   HttpResponse::Ok()
     .content_type("application/json")
-    .json(GetUserRTO::from(user))
+    .json(GetUserRto::from(user))
 }
 
 pub async fn create_user<UR: UserRepository + 'static>(
   data: web::Data<AppState<UR>>,
-  payload: web::Json<CreateUserDTO>,
+  payload: web::Json<CreateUserDto>,
   request: HttpRequest,
 ) -> impl Responder {
   // User from the JWT. Needed to verify if the user has permission to access the user
@@ -81,7 +81,7 @@ pub async fn create_user<UR: UserRepository + 'static>(
       HttpResponse::Created()
         .content_type("application/json")
         .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
-        .json(CreateUserRTO::from(user))
+        .json(CreatedRto::from(user))
     })
     .unwrap_or_else(|error| {
       println!("{}", error);
@@ -130,8 +130,8 @@ async fn find_auth_user<UR: UserRepository + 'static>(
   Some(decode_result.claims)
 }
 
-impl From<CreateUserDTO> for User {
-  fn from(dto: CreateUserDTO) -> Self {
+impl From<CreateUserDto> for User {
+  fn from(dto: CreateUserDto) -> Self {
     Self {
       uuid: nanoid!(),
       user_name: dto.user_name,
@@ -141,7 +141,7 @@ impl From<CreateUserDTO> for User {
 }
 
 // Transform User domain to RTO
-impl From<User> for GetUserRTO {
+impl From<User> for GetUserRto {
   fn from(user: User) -> Self {
     Self {
       uuid: user.uuid,
@@ -152,7 +152,7 @@ impl From<User> for GetUserRTO {
 }
 
 // Transform User domain to RTO
-impl From<User> for CreateUserRTO {
+impl From<User> for CreatedRto {
   fn from(user: User) -> Self {
     Self { uuid: user.uuid }
   }
@@ -166,7 +166,7 @@ mod tests {
   use nanoid::nanoid;
 
   use crate::{helpers::tests::{http_request, parse_http_response}, shared::{
-    config::Config, repository::user_repository::tests::UserRepositoryMock,
+    config::Config, repository::user_repository::tests::InMemoryUserRepository,
   }};
 
   use super::*;
@@ -183,7 +183,7 @@ mod tests {
     };
 
     let app_state = AppState {
-      user_repository: UserRepositoryMock { 
+      user_repository: InMemoryUserRepository { 
         users: RwLock::new(vec![user])
        },
       config: Config {
@@ -196,11 +196,11 @@ mod tests {
 
     let responder = get_user(
       web::Data::new(app_state), 
-      web::Path::from(GetUserDTO { uuid: uuid.clone() }), 
+      web::Path::from(GetUserDto { uuid: uuid.clone() }), 
       request.clone()
     ).await;
 
-    let rto: GetUserRTO = parse_http_response(
+    let rto: GetUserRto = parse_http_response(
       responder, 
       &request, 
       StatusCode::OK
@@ -224,7 +224,7 @@ mod tests {
     };
 
     let app_state = AppState {
-      user_repository: UserRepositoryMock { 
+      user_repository: InMemoryUserRepository { 
         users: RwLock::new(vec![user])
        },
       config: Config {
@@ -237,7 +237,7 @@ mod tests {
 
     let responder = get_user(
       web::Data::new(app_state), 
-      web::Path::from(GetUserDTO { uuid: nanoid!() }), 
+      web::Path::from(GetUserDto { uuid: nanoid!() }), 
       request.clone()
     ).await;
 
@@ -253,7 +253,7 @@ mod tests {
 
   #[test]
   fn test_create_user_dto_to_user() {
-    let dto = CreateUserDTO {
+    let dto = CreateUserDto {
       user_name: "test_user".to_string(),
       role: Role::Admin,
     };
@@ -273,7 +273,7 @@ mod tests {
       role: Role::Admin,
     };
 
-    let rto: GetUserRTO = user.clone().into();
+    let rto: GetUserRto = user.clone().into();
 
     assert_eq!(rto.uuid, user.uuid);
     assert_eq!(rto.user_name, user.user_name);
@@ -287,9 +287,7 @@ mod tests {
       user_name: "test_user".to_string(),
       role: Role::Admin,
     };
-
-    let rto: CreateUserRTO = user.clone().into();
-
+    let rto: CreatedRto = user.clone().into();
     assert_eq!(rto.uuid, user.uuid);
   }
 

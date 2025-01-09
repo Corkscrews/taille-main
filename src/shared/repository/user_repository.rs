@@ -76,11 +76,11 @@ pub mod tests {
   use crate::shared::model::user::User;
   use std::sync::RwLock;
 
-  pub struct UserRepositoryMock {
+  pub struct InMemoryUserRepository {
     pub users: RwLock<Vec<User>>,
   }
 
-  impl UserRepositoryMock {
+  impl InMemoryUserRepository {
     pub fn new() -> Self {
       Self {
         users: RwLock::new(Vec::new()),
@@ -88,7 +88,7 @@ pub mod tests {
     }
   }
 
-  impl UserRepository for UserRepositoryMock {
+  impl UserRepository for InMemoryUserRepository {
     async fn find_one(&self, uuid: String) -> Option<User> {
       let users = self.users.read().unwrap(); // Acquire read lock
       users.iter().find(|user| user.uuid == uuid).cloned()

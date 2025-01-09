@@ -71,10 +71,10 @@ mod tests {
   use actix_web::{http::header::HeaderValue, test, App};
   use helpers::tests::create_fake_access_token;
   use shared::{
-    repository::user_repository::tests::UserRepositoryMock, role::Role,
+    repository::user_repository::tests::InMemoryUserRepository, role::Role, rto::created_rto::CreatedRto,
   };
   use std::{env, net::SocketAddr, str::FromStr};
-  use users::rto::{create_user_rto::CreateUserRTO, get_user_rto::GetUserRTO};
+  use users::rto::get_user_rto::GetUserRto;
 
   #[actix_rt::test]
   async fn test_get_user_in_memory() {
@@ -86,7 +86,7 @@ mod tests {
     // Initialize the service in-memory
     let app = test::init_service(
       App::new().configure(|cfg| {
-        let user_repository = UserRepositoryMock::new();
+        let user_repository = InMemoryUserRepository::new();
         config(cfg, user_repository)
       }), // your config function
     )
@@ -127,7 +127,7 @@ mod tests {
       .expect("Response body should be valid UTF-8");
 
     // Deserialize the JSON response into your struct
-    let create_user_rto: CreateUserRTO = serde_json::from_str(create_body_str)
+    let create_user_rto: CreatedRto = serde_json::from_str(create_body_str)
       .expect("Failed to parse response JSON");
 
     // 2) Get user
@@ -153,7 +153,7 @@ mod tests {
       .expect("Response body should be valid UTF-8");
 
     // Deserialize the JSON response into your struct
-    let get_user_rto: GetUserRTO = serde_json::from_str(get_user_body_str)
+    let get_user_rto: GetUserRto = serde_json::from_str(get_user_body_str)
       .expect("Failed to parse response JSON");
     assert_eq!(get_user_rto.uuid, create_user_rto.uuid);
   }

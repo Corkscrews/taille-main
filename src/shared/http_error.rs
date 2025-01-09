@@ -6,7 +6,7 @@ pub struct HttpError {
 }
 
 impl From<&str> for HttpError {
-    fn from(message: &str) -> Self {
-      Self { message: String::from(message) }
-    }
+  fn from(message: &str) -> Self {
+    Self { message: String::from(message) }
+  }
 }
