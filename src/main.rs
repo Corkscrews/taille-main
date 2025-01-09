@@ -1,5 +1,6 @@
 mod shared;
 mod users;
+mod trips;
 mod helpers;
 
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use actix_web::{web, App, HttpServer};
 use shared::config::Config;
 use shared::database::Database;
 use shared::repository::user_repository::{UserRepository, UserRepositoryImpl};
+use trips::{create_trip, get_trip};
 use users::{create_user, get_user};
 
 // This struct represents state
@@ -56,12 +58,19 @@ fn config<UR: UserRepository + 'static>(
       config: Config::default(),
     }))
     .service(
-      web::scope("/v1").service(
-        web::scope("/users")
-          .wrap(Governor::new(&governor_config))
-          .route("/{uuid}", web::get().to(get_user::<UR>))
-          .route("", web::post().to(create_user::<UR>)),
-      ),
+      web::scope("/v1")
+        .service(
+          web::scope("/users")
+            .wrap(Governor::new(&governor_config))
+            .route("/{uuid}", web::get().to(get_user::<UR>))
+            .route("", web::post().to(create_user::<UR>))
+        )
+        .service(
+          web::scope("/trips")
+            .wrap(Governor::new(&governor_config))
+            .route("/{uuid}", web::get().to(get_trip::<UR>))
+            .route("", web::post().to(create_trip::<UR>))
+        )
     );
 }
 

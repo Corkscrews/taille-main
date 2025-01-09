@@ -4,7 +4,7 @@ Welcome to **Taille-Main**, the main server responsible for allowing Irish taxis
 
 ## Overview
 
-- **Purpose**: Provide a minimal authentication service to login and generate temporary JWT token pairs.  
+- **Purpose**: Provide a minimal authentication service to start trips and give management tools for the support team.
 - **Tech Stack**:  
   - [Rust](https://www.rust-lang.org/)  
   - [Actix-Web](https://actix.rs/)  

@@ -12,6 +12,7 @@ use nanoid::nanoid;
 use rto::get_user_rto::GetUserRto;
 use validator::Validate;
 
+use crate::shared::config::Config;
 use crate::shared::http_error::HttpError;
 use crate::shared::model::user::User;
 use crate::shared::repository::user_repository::UserRepository;
@@ -32,7 +33,7 @@ pub async fn get_user<UR: UserRepository + 'static>(
 
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
-  let auth = find_auth_user::<UR>(request, &data).await;
+  let auth = find_auth_user(request, &data.config).await;
   if auth.is_none() {
     return invalid_auth_header();
   }
@@ -59,12 +60,12 @@ pub async fn get_user<UR: UserRepository + 'static>(
 
 pub async fn create_user<UR: UserRepository + 'static>(
   data: web::Data<AppState<UR>>,
-  payload: web::Json<CreateUserDto>,
+  dto: web::Json<CreateUserDto>,
   request: HttpRequest,
 ) -> impl Responder {
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
-  let auth = find_auth_user::<UR>(request, &data).await;
+  let auth = find_auth_user(request, &data.config).await;
   if auth.is_none() {
     return invalid_auth_header();
   }
@@ -75,7 +76,7 @@ pub async fn create_user<UR: UserRepository + 'static>(
 
   data
     .user_repository
-    .create(User::from(payload.0))
+    .create(User::from(dto.into_inner()))
     .await
     .map(|user| {
       HttpResponse::Created()
@@ -102,9 +103,9 @@ fn user_not_found() -> HttpResponse {
     .json(HttpError::from("User not found"))
 }
 
-async fn find_auth_user<UR: UserRepository + 'static>(
+async fn find_auth_user(
   request: HttpRequest,
-  data: &web::Data<AppState<UR>>,
+  config: &Config,
 ) -> Option<AccessTokenClaims> {
   // Extract the Authorization header
   let authorization_header = match request.headers().get("Authorization") {
@@ -118,7 +119,7 @@ async fn find_auth_user<UR: UserRepository + 'static>(
 
   let decode_result = decode::<AccessTokenClaims>(
     &token,
-    &DecodingKey::from_secret(data.config.jwt_secret.as_bytes()),
+    &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
     &Validation::default(),
   );
 
