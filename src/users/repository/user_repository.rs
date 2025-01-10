@@ -22,7 +22,7 @@ pub enum UserRepositoryError {
 
 pub trait UserRepository {
   async fn find_one(&self, uuid: String) -> Option<User>;
-  async fn create(&self, user: CreateUser)
+  async fn create(&self, create_user: CreateUser)
     -> Result<User, UserRepositoryError>;
 }
 
@@ -50,7 +50,7 @@ impl UserRepository for UserRepositoryImpl {
 
   async fn create(
     &self,
-    user: CreateUser,
+    create_user: CreateUser,
   ) -> Result<User, UserRepositoryError> {
     let query = r#"
       INSERT INTO users (uuid, user_name, role)
@@ -58,9 +58,9 @@ impl UserRepository for UserRepositoryImpl {
       RETURNING uuid, user_name, role
     "#;
     sqlx::query(query)
-      .bind(&user.uuid)
-      .bind(&user.user_name)
-      .bind(serde_json::to_string(&user.role).unwrap())
+      .bind(&create_user.uuid)
+      .bind(&create_user.user_name)
+      .bind(serde_json::to_string(&create_user.role).unwrap())
       .map(|row: PgRow| User::from(row))
       .fetch_one(&*self.pool)
       .await
@@ -77,7 +77,7 @@ pub struct CreateUser {
 
 impl From<PgRow> for User {
   fn from(row: PgRow) -> Self {
-    User {
+    Self {
       uuid: row.get("uuid"),
       created_at: row.get::<DateTime<Utc>, _>("created_at"),
       updated_at: row.get::<DateTime<Utc>, _>("updated_at"),

@@ -1,5 +1,6 @@
 pub mod dto;
 pub mod model;
+pub mod repository;
 pub mod rto;
 
 use actix_web::http::header;
@@ -14,14 +15,14 @@ use validator::Validate;
 
 use crate::shared::config::Config;
 use crate::shared::http_error::HttpError;
-use crate::shared::repository::user_repository::{CreateUser, UserRepository};
 use crate::shared::role::Role;
 use crate::shared::rto::created_rto::CreatedRto;
 use crate::users::model::user::User;
-use crate::AppState;
+use crate::users::repository::user_repository::{CreateUser, UserRepository};
 
-pub async fn get_user<UR: UserRepository + 'static>(
-  data: web::Data<AppState<UR>>,
+pub async fn get_user<UR: UserRepository>(
+  config: web::Data<Config>,
+  user_repository: web::Data<UR>,
   path: web::Path<GetUserDto>,
   request: HttpRequest,
 ) -> impl Responder {
@@ -33,7 +34,7 @@ pub async fn get_user<UR: UserRepository + 'static>(
 
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
-  let auth = find_auth_user(request, &data.config).await;
+  let auth = find_auth_user(request, &config).await;
   if auth.is_none() {
     return invalid_auth_header();
   }
@@ -42,7 +43,7 @@ pub async fn get_user<UR: UserRepository + 'static>(
   // TODO: This solution below is vulnerable to time based attacks, transform the login
   // process into a time constant solution to prevent those issues.
   // Call `find_one` with `await` on the repository instance
-  let user = data.user_repository.find_one(path.uuid.clone()).await;
+  let user = user_repository.find_one(path.uuid.clone()).await;
 
   if user.is_none() {
     return user_not_found();
@@ -58,14 +59,15 @@ pub async fn get_user<UR: UserRepository + 'static>(
     .json(GetUserRto::from(user))
 }
 
-pub async fn create_user<UR: UserRepository + 'static>(
-  data: web::Data<AppState<UR>>,
+pub async fn create_user<UR: UserRepository>(
+  config: web::Data<Config>,
+  user_repository: web::Data<UR>,
   dto: web::Json<CreateUserDto>,
   request: HttpRequest,
 ) -> impl Responder {
   // User from the JWT. Needed to verify if the user has permission to access the user
   // from the query below.
-  let auth = find_auth_user(request, &data.config).await;
+  let auth = find_auth_user(request, &config).await;
   if auth.is_none() {
     return invalid_auth_header();
   }
@@ -74,8 +76,7 @@ pub async fn create_user<UR: UserRepository + 'static>(
     return HttpResponse::Forbidden().body("Forbidden");
   }
 
-  data
-    .user_repository
+  user_repository
     .create(CreateUser::from(dto.into_inner()))
     .await
     .map(|user| {
@@ -88,16 +89,6 @@ pub async fn create_user<UR: UserRepository + 'static>(
       println!("{}", error);
       HttpResponse::InternalServerError().finish()
     })
-}
-
-impl From<CreateUserDto> for CreateUser {
-  fn from(dto: CreateUserDto) -> Self {
-    Self {
-      uuid: nanoid!(),
-      user_name: dto.user_name,
-      role: dto.role,
-    }
-  }
 }
 
 // TODO: shouldn't this be an middleware?
@@ -141,13 +132,12 @@ async fn find_auth_user(
   Some(decode_result.claims)
 }
 
-// Transform User domain to RTO
-impl From<User> for GetUserRto {
-  fn from(user: User) -> Self {
+impl From<CreateUserDto> for CreateUser {
+  fn from(dto: CreateUserDto) -> Self {
     Self {
-      uuid: user.uuid,
-      user_name: user.user_name,
-      role: user.role,
+      uuid: nanoid!(),
+      user_name: dto.user_name,
+      role: dto.role,
     }
   }
 }
@@ -159,6 +149,17 @@ impl From<User> for CreatedRto {
   }
 }
 
+// Transform User domain to RTO
+impl From<User> for GetUserRto {
+  fn from(user: User) -> Self {
+    Self {
+      uuid: user.uuid,
+      user_name: user.user_name,
+      role: user.role,
+    }
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use std::sync::RwLock;
@@ -166,12 +167,12 @@ mod tests {
   use actix_web::http::StatusCode;
   use chrono::Utc;
   use nanoid::nanoid;
+use repository::user_repository::tests::InMemoryUserRepository;
 
   use crate::{
     helpers::tests::{http_request, parse_http_response},
     shared::{
       config::Config,
-      repository::user_repository::tests::InMemoryUserRepository,
     },
   };
 
@@ -190,20 +191,20 @@ mod tests {
       role: Role::Admin,
     };
 
-    let app_state = AppState {
-      user_repository: InMemoryUserRepository {
-        users: RwLock::new(vec![user]),
-      },
-      config: Config {
-        master_key: nanoid!(),
-        jwt_secret: jwt_secret.clone(),
-      },
-    };
-
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(app_state),
+      web::Data::new(
+        Config {
+          master_key: nanoid!(),
+          jwt_secret: jwt_secret.clone(),
+        }
+      ),
+      web::Data::new(
+        InMemoryUserRepository {
+          users: RwLock::new(vec![user]),
+        }
+      ),
       web::Path::from(GetUserDto { uuid: uuid.clone() }),
       request.clone(),
     )
@@ -231,20 +232,20 @@ mod tests {
       role: Role::Admin,
     };
 
-    let app_state = AppState {
-      user_repository: InMemoryUserRepository {
-        users: RwLock::new(vec![user]),
-      },
-      config: Config {
-        master_key: nanoid!(),
-        jwt_secret: jwt_secret.clone(),
-      },
-    };
-
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(app_state),
+      web::Data::new(
+        Config {
+          master_key: nanoid!(),
+          jwt_secret: jwt_secret.clone(),
+        }
+      ),
+      web::Data::new(
+        InMemoryUserRepository {
+          users: RwLock::new(vec![user]),
+        }
+      ),
       web::Path::from(GetUserDto { uuid: nanoid!() }),
       request.clone(),
     )

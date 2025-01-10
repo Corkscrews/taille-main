@@ -2,12 +2,12 @@ use actix_web::{dev::ServiceRequest, error, web, Error};
 use actix_web_httpauth::extractors::bearer::BearerAuth;
 use subtle::ConstantTimeEq;
 
-use crate::{shared::repository::user_repository::UserRepository, AppState};
+use crate::shared::config::Config;
 
 /// Validator that:
 /// - accepts Bearer auth;
 /// - returns a custom response for requests without a valid Bearer Authorization header;
-pub async fn bearer_validator<UR: UserRepository + 'static>(
+pub async fn bearer_validator(
   req: ServiceRequest,
   credentials: Option<BearerAuth>,
 ) -> Result<ServiceRequest, (Error, ServiceRequest)> {
@@ -15,11 +15,11 @@ pub async fn bearer_validator<UR: UserRepository + 'static>(
     return Err((error::ErrorBadRequest("no bearer header"), req));
   };
 
-  let app_data = req.app_data::<web::Data<AppState<UR>>>().unwrap();
+  let config = req.app_data::<web::Data<Config>>().unwrap();
 
   // eprintln!("{credentials:?}");
 
-  if !constant_time_compare(credentials.token(), &app_data.config.master_key) {
+  if !constant_time_compare(credentials.token(), &config.master_key) {
     return Err((error::ErrorBadRequest("Missing bearer token"), req));
   }
 
