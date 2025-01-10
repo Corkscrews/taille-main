@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::shared::{model::user::User, role::Role};
+use crate::shared::role::Role;
+
+use super::user::User;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccessTokenClaims {

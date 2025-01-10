@@ -1,7 +1,7 @@
-mod shared;
-mod users;
-mod trips;
 mod helpers;
+mod shared;
+mod trips;
+mod users;
 
 use std::sync::Arc;
 
@@ -63,14 +63,14 @@ fn config<UR: UserRepository + 'static>(
           web::scope("/users")
             .wrap(Governor::new(&governor_config))
             .route("/{uuid}", web::get().to(get_user::<UR>))
-            .route("", web::post().to(create_user::<UR>))
+            .route("", web::post().to(create_user::<UR>)),
         )
         .service(
           web::scope("/trips")
             .wrap(Governor::new(&governor_config))
             .route("/{uuid}", web::get().to(get_trip::<UR>))
-            .route("", web::post().to(create_trip::<UR>))
-        )
+            .route("", web::post().to(create_trip::<UR>)),
+        ),
     );
 }
 
@@ -80,7 +80,8 @@ mod tests {
   use actix_web::{http::header::HeaderValue, test, App};
   use helpers::tests::create_fake_access_token;
   use shared::{
-    repository::user_repository::tests::InMemoryUserRepository, role::Role, rto::created_rto::CreatedRto,
+    repository::user_repository::tests::InMemoryUserRepository, role::Role,
+    rto::created_rto::CreatedRto,
   };
   use std::{env, net::SocketAddr, str::FromStr};
   use users::rto::get_user_rto::GetUserRto;
@@ -166,5 +167,4 @@ mod tests {
       .expect("Failed to parse response JSON");
     assert_eq!(get_user_rto.uuid, create_user_rto.uuid);
   }
-
 }

@@ -1,4 +1,5 @@
 pub mod dto;
+pub mod model;
 pub mod rto;
 
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
@@ -7,7 +8,7 @@ use jsonwebtoken::{decode, DecodingKey, Validation};
 use nanoid::nanoid;
 use validator::Validate;
 
-use crate::shared::repository::user_repository::UserRepository;
+use crate::shared::repository::user_repository::{CreateUser, UserRepository};
 use crate::users::dto::create_user_dto::CreateUserDto;
 use crate::AppState;
 
@@ -21,9 +22,7 @@ pub async fn get_trip<UR: UserRepository + 'static>(
     // If validation fails, return a 400 error with details
     return HttpResponse::BadRequest().json(validation_errors);
   }
-  HttpResponse::Ok()
-    .content_type("application/json")
-    .finish()
+  HttpResponse::Ok().content_type("application/json").finish()
 }
 
 pub async fn create_trip<UR: UserRepository + 'static>(
@@ -36,7 +35,5 @@ pub async fn create_trip<UR: UserRepository + 'static>(
     // If validation fails, return a 400 error with details
     return HttpResponse::BadRequest().json(validation_errors);
   }
-  HttpResponse::Ok()
-    .content_type("application/json")
-    .finish()
+  HttpResponse::Ok().content_type("application/json").finish()
 }

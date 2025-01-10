@@ -1,11 +1,14 @@
 #[cfg(test)]
 pub mod tests {
   use crate::shared::role::Role;
-  use actix_web::{http::{header::HeaderValue, StatusCode}, HttpRequest, Responder};
+  use actix_web::{
+    http::{header::HeaderValue, StatusCode},
+    HttpRequest, Responder,
+  };
   use fake::{faker::internet::en::SafeEmail, Fake};
   use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-  use serde::{de::DeserializeOwned, Deserialize, Serialize};
   use nanoid::nanoid;
+  use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
   #[derive(Serialize, Deserialize)]
   pub struct FakeAccessTokenClaims {
@@ -35,7 +38,7 @@ pub mod tests {
   pub fn http_request(jwt_secret: &str) -> HttpRequest {
     let authorization_header = HeaderValue::from_str(&format!(
       "Bearer {}",
-      create_fake_access_token(&jwt_secret)
+      create_fake_access_token(jwt_secret)
     ))
     .unwrap();
     actix_web::test::TestRequest::default()
@@ -51,12 +54,12 @@ pub mod tests {
   }
 
   pub async fn parse_http_response<T: DeserializeOwned>(
-    responder: impl Responder, 
+    responder: impl Responder,
     request: &HttpRequest,
-    status_code: StatusCode
+    status_code: StatusCode,
   ) -> T {
     // Convert the `Responder` into an HttpResponse
-    let http_response = responder.respond_to(&request);
+    let http_response = responder.respond_to(request);
 
     // Wrap the HttpResponse in a ServiceResponse so that test utilities can work with it
     let service_response =
@@ -66,5 +69,4 @@ pub mod tests {
     assert_eq!(service_response.status(), status_code);
     actix_web::test::read_body_json(service_response).await
   }
-
 }

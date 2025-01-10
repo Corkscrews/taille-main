@@ -14,10 +14,10 @@ use validator::Validate;
 
 use crate::shared::config::Config;
 use crate::shared::http_error::HttpError;
-use crate::shared::model::user::User;
-use crate::shared::repository::user_repository::UserRepository;
+use crate::shared::repository::user_repository::{CreateUser, UserRepository};
 use crate::shared::role::Role;
 use crate::shared::rto::created_rto::CreatedRto;
+use crate::users::model::user::User;
 use crate::AppState;
 
 pub async fn get_user<UR: UserRepository + 'static>(
@@ -76,7 +76,7 @@ pub async fn create_user<UR: UserRepository + 'static>(
 
   data
     .user_repository
-    .create(User::from(dto.into_inner()))
+    .create(CreateUser::from(dto.into_inner()))
     .await
     .map(|user| {
       HttpResponse::Created()
@@ -88,6 +88,16 @@ pub async fn create_user<UR: UserRepository + 'static>(
       println!("{}", error);
       HttpResponse::InternalServerError().finish()
     })
+}
+
+impl From<CreateUserDto> for CreateUser {
+  fn from(dto: CreateUserDto) -> Self {
+    Self {
+      uuid: nanoid!(),
+      user_name: dto.user_name,
+      role: dto.role,
+    }
+  }
 }
 
 // TODO: shouldn't this be an middleware?
@@ -131,16 +141,6 @@ async fn find_auth_user(
   Some(decode_result.claims)
 }
 
-impl From<CreateUserDto> for User {
-  fn from(dto: CreateUserDto) -> Self {
-    Self {
-      uuid: nanoid!(),
-      user_name: dto.user_name,
-      role: dto.role,
-    }
-  }
-}
-
 // Transform User domain to RTO
 impl From<User> for GetUserRto {
   fn from(user: User) -> Self {
@@ -164,11 +164,16 @@ mod tests {
   use std::sync::RwLock;
 
   use actix_web::http::StatusCode;
+  use chrono::Utc;
   use nanoid::nanoid;
 
-  use crate::{helpers::tests::{http_request, parse_http_response}, shared::{
-    config::Config, repository::user_repository::tests::InMemoryUserRepository,
-  }};
+  use crate::{
+    helpers::tests::{http_request, parse_http_response},
+    shared::{
+      config::Config,
+      repository::user_repository::tests::InMemoryUserRepository,
+    },
+  };
 
   use super::*;
 
@@ -179,14 +184,16 @@ mod tests {
 
     let user = User {
       uuid: uuid.clone(),
+      created_at: Utc::now(),
+      updated_at: Utc::now(),
       user_name: "John Doe".to_string(),
       role: Role::Admin,
     };
 
     let app_state = AppState {
-      user_repository: InMemoryUserRepository { 
-        users: RwLock::new(vec![user])
-       },
+      user_repository: InMemoryUserRepository {
+        users: RwLock::new(vec![user]),
+      },
       config: Config {
         master_key: nanoid!(),
         jwt_secret: jwt_secret.clone(),
@@ -196,16 +203,14 @@ mod tests {
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(app_state), 
-      web::Path::from(GetUserDto { uuid: uuid.clone() }), 
-      request.clone()
-    ).await;
+      web::Data::new(app_state),
+      web::Path::from(GetUserDto { uuid: uuid.clone() }),
+      request.clone(),
+    )
+    .await;
 
-    let rto: GetUserRto = parse_http_response(
-      responder, 
-      &request, 
-      StatusCode::OK
-    ).await;
+    let rto: GetUserRto =
+      parse_http_response(responder, &request, StatusCode::OK).await;
 
     // Assertions
     assert_eq!(rto.user_name, "John Doe");
@@ -220,14 +225,16 @@ mod tests {
 
     let user = User {
       uuid: uuid.clone(),
+      created_at: Utc::now(),
+      updated_at: Utc::now(),
       user_name: "John Doe".to_string(),
       role: Role::Admin,
     };
 
     let app_state = AppState {
-      user_repository: InMemoryUserRepository { 
-        users: RwLock::new(vec![user])
-       },
+      user_repository: InMemoryUserRepository {
+        users: RwLock::new(vec![user]),
+      },
       config: Config {
         master_key: nanoid!(),
         jwt_secret: jwt_secret.clone(),
@@ -237,29 +244,27 @@ mod tests {
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(app_state), 
-      web::Path::from(GetUserDto { uuid: nanoid!() }), 
-      request.clone()
-    ).await;
+      web::Data::new(app_state),
+      web::Path::from(GetUserDto { uuid: nanoid!() }),
+      request.clone(),
+    )
+    .await;
 
-    let rto: HttpError = parse_http_response(
-      responder, 
-      &request, 
-      StatusCode::NOT_FOUND
-    ).await;
+    let rto: HttpError =
+      parse_http_response(responder, &request, StatusCode::NOT_FOUND).await;
 
     // Assertions
     assert_eq!(rto.message, "User not found");
   }
 
   #[test]
-  fn test_create_user_dto_to_user() {
+  fn test_create_user_dto_to_create_user() {
     let dto = CreateUserDto {
       user_name: "test_user".to_string(),
       role: Role::Admin,
     };
 
-    let user: User = dto.clone().into();
+    let user: CreateUser = dto.clone().into();
 
     assert_eq!(user.user_name, dto.user_name);
     assert_eq!(user.role, dto.role);
@@ -270,6 +275,8 @@ mod tests {
   fn test_user_to_get_user_rto() {
     let user = User {
       uuid: "test_uuid".to_string(),
+      created_at: Utc::now(),
+      updated_at: Utc::now(),
       user_name: "test_user".to_string(),
       role: Role::Admin,
     };
@@ -285,11 +292,12 @@ mod tests {
   fn test_user_to_create_user_rto() {
     let user = User {
       uuid: "test_uuid".to_string(),
+      created_at: Utc::now(),
+      updated_at: Utc::now(),
       user_name: "test_user".to_string(),
       role: Role::Admin,
     };
     let rto: CreatedRto = user.clone().into();
     assert_eq!(rto.uuid, user.uuid);
   }
-
 }
