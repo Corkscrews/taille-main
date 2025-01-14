@@ -6,13 +6,14 @@ mod users;
 use std::sync::Arc;
 
 use actix_governor::{Governor, GovernorConfigBuilder};
-use actix_web::{web, App, HttpServer};
+use actix_web::{middleware, web, App, HttpServer};
 use shared::config::Config;
 use shared::database::Database;
-use users::repository::user_repository::{UserRepository, UserRepositoryImpl};
 use trips::repository::trip_repository::{TripRepository, TripRepositoryImpl};
 use trips::{create_trip, get_trip};
+use users::repository::user_repository::{UserRepository, UserRepositoryImpl};
 use users::{create_user, get_user};
+use nanoid::nanoid;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -44,12 +45,12 @@ async fn main() -> std::io::Result<()> {
 
 // Function to initialize the App
 fn apply_service_config<
-  UR: UserRepository + 'static, 
-  TR: TripRepository + 'static
+  UR: UserRepository + 'static,
+  TR: TripRepository + 'static,
 >(
-  config: &mut web::ServiceConfig,
+  service_config: &mut web::ServiceConfig,
   user_repository: &Arc<UR>,
-  trip_repository: &Arc<TR>
+  trip_repository: &Arc<TR>,
 ) {
   // Rate limit
   // Allow bursts with up to five requests per IP address
@@ -60,12 +61,16 @@ fn apply_service_config<
     .finish()
     .unwrap();
 
-  config
-    .app_data(web::Data::new(Config::default()))
-    .app_data(web::Data::new(user_repository.clone()))
-    .app_data(web::Data::new(trip_repository.clone()))
+  let config = Config::default();
+  let config = Arc::new(config);
+
+  service_config
+    .app_data(web::Data::from(config.clone()))
+    .app_data(web::Data::from(user_repository.clone()))
+    .app_data(web::Data::from(trip_repository.clone()))
     .service(
       web::scope("/v1")
+        .wrap(middleware::Logger::default())
         .service(
           web::scope("/users")
             .wrap(Governor::new(&governor_config))
@@ -81,21 +86,34 @@ fn apply_service_config<
     );
 }
 
+lazy_static::lazy_static! {
+  static ref CUSTOM_ALPHABET: Vec<char> = 
+    nanoid::alphabet::SAFE.iter()
+      .filter(|&&c| c != '_' && c != '-')
+      .copied()
+      .collect();
+}
+
+fn custom_nanoid() -> String {
+  // Generate a nanoid with the custom alphabet and desired size
+  nanoid!(21, &*CUSTOM_ALPHABET)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use actix_web::{http::header::HeaderValue, test, App};
   use helpers::tests::create_fake_access_token;
-  use shared::{role::Role,
-    rto::created_rto::CreatedRto,
-  };
-  use trips::repository::trip_repository::tests::InMemoryTripRepository;
+  use shared::{role::Role, rto::created_rto::CreatedRto};
   use std::{env, net::SocketAddr, str::FromStr};
-  use users::{repository::user_repository::tests::InMemoryUserRepository, rto::get_user_rto::GetUserRto};
+  use trips::repository::trip_repository::tests::InMemoryTripRepository;
+  use users::{
+    repository::user_repository::tests::InMemoryUserRepository,
+    rto::get_user_rto::GetUserRto,
+  };
 
   #[actix_rt::test]
   async fn test_get_user_in_memory() {
-
     std::env::set_var("RUST_LOG", "debug");
     env_logger::init();
 

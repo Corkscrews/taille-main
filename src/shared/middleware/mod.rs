@@ -1,1 +1,1 @@
-pub mod master_key_middleware;
+pub mod bearer_middleware;

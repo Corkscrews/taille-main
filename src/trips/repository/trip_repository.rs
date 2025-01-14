@@ -5,8 +5,8 @@ use sqlx::Row;
 use sqlx::{postgres::PgRow, Pool, Postgres};
 use thiserror::Error;
 
-use crate::trips::model::Trip;
 use crate::shared::database::Database;
+use crate::trips::model::Trip;
 
 #[derive(Debug, Error)]
 pub enum TripRepositoryError {
@@ -21,9 +21,11 @@ pub enum TripRepositoryError {
 }
 
 pub trait TripRepository {
-  async fn find_one(&self, uuid: String) -> Option<Trip>;
-  async fn create(&self, create_trip: CreateTrip)
-    -> Result<Trip, TripRepositoryError>;
+  async fn find_one(&self, uuid: &str) -> Option<Trip>;
+  async fn create(
+    &self,
+    create_trip: CreateTrip,
+  ) -> Result<Trip, TripRepositoryError>;
 }
 
 pub struct TripRepositoryImpl {
@@ -39,7 +41,7 @@ impl TripRepositoryImpl {
 }
 
 impl TripRepository for TripRepositoryImpl {
-  async fn find_one(&self, uuid: String) -> Option<Trip> {
+  async fn find_one(&self, uuid: &str) -> Option<Trip> {
     let rows = sqlx::query("SELECT * FROM trips WHERE uuid = ? LIMIT 1")
       .bind(uuid)
       .map(|row: PgRow| Trip::from(row))
@@ -53,14 +55,16 @@ impl TripRepository for TripRepositoryImpl {
     create_trip: CreateTrip,
   ) -> Result<Trip, TripRepositoryError> {
     let query = r#"
-      INSERT INTO users (uuid, start_coords, end_coords)
+      INSERT INTO users (uuid, start_coords, end_coords, driver_uuid, consumer_uuid)
       VALUES ($1, $2, $3)
-      RETURNING uuid, start_coords, end_coords
+      RETURNING uuid, created_at, updated_at, start_coords, end_coords, driver_uuid, consumer_uuid
     "#;
     sqlx::query(query)
       .bind(&create_trip.uuid)
       .bind(&create_trip.start_coords)
       .bind(&create_trip.end_coords)
+      .bind(&create_trip.driver_uuid)
+      .bind(&create_trip.consumer_uuid)
       .map(|row: PgRow| Trip::from(row))
       .fetch_one(&*self.pool)
       .await
@@ -73,6 +77,8 @@ pub struct CreateTrip {
   pub uuid: String,
   pub start_coords: String,
   pub end_coords: String,
+  pub driver_uuid: Option<String>,
+  pub consumer_uuid: String,
 }
 
 impl From<PgRow> for Trip {
@@ -82,15 +88,17 @@ impl From<PgRow> for Trip {
       created_at: row.get::<DateTime<Utc>, _>("created_at"),
       updated_at: row.get::<DateTime<Utc>, _>("updated_at"),
       start_coords: row.get("start_coords"),
-      end_coords: row.get("end_coords")
+      end_coords: row.get("end_coords"),
+      driver_uuid: row.get("driver_uuid"),
+      consumer_uuid: row.get("consumer_uuid"),
     }
   }
 }
 
 #[cfg(test)]
 pub mod tests {
-  use chrono::Utc;
   use crate::trips::model::Trip;
+  use chrono::Utc;
   use std::sync::RwLock;
 
   use super::{CreateTrip, TripRepository, TripRepositoryError};
@@ -108,7 +116,7 @@ pub mod tests {
   }
 
   impl TripRepository for InMemoryTripRepository {
-    async fn find_one(&self, uuid: String) -> Option<Trip> {
+    async fn find_one(&self, uuid: &str) -> Option<Trip> {
       let trips = self.trips.read().unwrap(); // Acquire read lock
       trips.iter().find(|trip| trip.uuid == uuid).cloned()
     }
@@ -124,6 +132,8 @@ pub mod tests {
         updated_at: Utc::now(),
         start_coords: String::from(""),
         end_coords: String::from(""),
+        driver_uuid: None,
+        consumer_uuid: String::from("")
       };
       trips.push(trip.clone());
       Ok(trip)

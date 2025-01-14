@@ -4,16 +4,16 @@ pub mod repository;
 pub mod rto;
 
 use actix_web::http::header;
-use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use actix_web::{web, HttpResponse, Responder};
 use dto::create_user_dto::CreateUserDto;
 use dto::get_user_dto::GetUserDto;
-use jsonwebtoken::{decode, DecodingKey, Validation};
 use model::access_token_claims::AccessTokenClaims;
 use nanoid::nanoid;
+use repository::user_repository::UserRepositoryError;
 use rto::get_user_rto::GetUserRto;
 use validator::Validate;
 
-use crate::shared::config::Config;
+use crate::custom_nanoid;
 use crate::shared::http_error::HttpError;
 use crate::shared::role::Role;
 use crate::shared::rto::created_rto::CreatedRto;
@@ -21,132 +21,35 @@ use crate::users::model::user::User;
 use crate::users::repository::user_repository::{CreateUser, UserRepository};
 
 pub async fn get_user<UR: UserRepository>(
-  config: web::Data<Config>,
   user_repository: web::Data<UR>,
   path: web::Path<GetUserDto>,
-  request: HttpRequest,
+  auth: AccessTokenClaims,
 ) -> impl Responder {
   // Perform validation
   if let Err(validation_errors) = path.validate() {
     // If validation fails, return a 400 error with details
     return HttpResponse::BadRequest().json(validation_errors);
   }
+  user_repository
+    .find_one(&path.uuid)
+    .await
+    .filter(|user| auth.is_user_allowed(user))
+    .ok_or_else(user_not_found)
+    .map(user_found)
+    .unwrap_or_else(|err| err)
+}
 
-  // User from the JWT. Needed to verify if the user has permission to access the user
-  // from the query below.
-  let auth = find_auth_user(request, &config).await;
-  if auth.is_none() {
-    return invalid_auth_header();
-  }
-  let auth = auth.unwrap();
-
-  // TODO: This solution below is vulnerable to time based attacks, transform the login
-  // process into a time constant solution to prevent those issues.
-  // Call `find_one` with `await` on the repository instance
-  let user = user_repository.find_one(path.uuid.clone()).await;
-
-  if user.is_none() {
-    return user_not_found();
-  }
-  let user = user.unwrap();
-
-  if !auth.is_user_allowed(&user) {
-    return user_not_found();
-  }
-
+fn user_found(user: User) -> HttpResponse {
   HttpResponse::Ok()
     .content_type("application/json")
+    .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
     .json(GetUserRto::from(user))
-}
-
-pub async fn create_user<UR: UserRepository>(
-  config: web::Data<Config>,
-  user_repository: web::Data<UR>,
-  dto: web::Json<CreateUserDto>,
-  request: HttpRequest,
-) -> impl Responder {
-  // User from the JWT. Needed to verify if the user has permission to access the user
-  // from the query below.
-  let auth = find_auth_user(request, &config).await;
-  if auth.is_none() {
-    return invalid_auth_header();
-  }
-  let auth = auth.unwrap();
-  if auth.role != Role::Admin && auth.role != Role::Manager {
-    return HttpResponse::Forbidden().body("Forbidden");
-  }
-
-  user_repository
-    .create(CreateUser::from(dto.into_inner()))
-    .await
-    .map(|user| {
-      HttpResponse::Created()
-        .content_type("application/json")
-        .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
-        .json(CreatedRto::from(user))
-    })
-    .unwrap_or_else(|error| {
-      println!("{}", error);
-      HttpResponse::InternalServerError().finish()
-    })
-}
-
-// TODO: shouldn't this be an middleware?
-fn invalid_auth_header() -> HttpResponse {
-  HttpResponse::BadRequest()
-    .content_type("application/json")
-    .json(HttpError::from("Invalid Authorization header"))
 }
 
 fn user_not_found() -> HttpResponse {
   HttpResponse::NotFound()
     .content_type("application/json")
     .json(HttpError::from("User not found"))
-}
-
-async fn find_auth_user(
-  request: HttpRequest,
-  config: &Config,
-) -> Option<AccessTokenClaims> {
-  // Extract the Authorization header
-  let authorization_header = match request.headers().get("Authorization") {
-    Some(header_value) => match header_value.to_str() {
-      Ok(value) => value,
-      Err(_) => return None,
-    },
-    None => return None,
-  };
-  let token = authorization_header.replace("Bearer ", "");
-
-  let decode_result = decode::<AccessTokenClaims>(
-    &token,
-    &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
-    &Validation::default(),
-  );
-
-  if decode_result.is_err() {
-    return None;
-  }
-  let decode_result = decode_result.unwrap();
-
-  Some(decode_result.claims)
-}
-
-impl From<CreateUserDto> for CreateUser {
-  fn from(dto: CreateUserDto) -> Self {
-    Self {
-      uuid: nanoid!(),
-      user_name: dto.user_name,
-      role: dto.role,
-    }
-  }
-}
-
-// Transform User domain to RTO
-impl From<User> for CreatedRto {
-  fn from(user: User) -> Self {
-    Self { uuid: user.uuid }
-  }
 }
 
 // Transform User domain to RTO
@@ -160,28 +63,73 @@ impl From<User> for GetUserRto {
   }
 }
 
+pub async fn create_user<UR: UserRepository>(
+  user_repository: web::Data<UR>,
+  dto: web::Json<CreateUserDto>,
+  auth: AccessTokenClaims,
+) -> impl Responder {
+  // Perform validation
+  if let Err(validation_errors) = dto.validate() {
+    // If validation fails, return a 400 error with details
+    return HttpResponse::BadRequest().json(validation_errors);
+  }
+  if auth.role != Role::Admin && auth.role != Role::Manager {
+    return HttpResponse::Forbidden().body("Forbidden");
+  }
+  user_repository
+    .create(CreateUser::from(dto.into_inner()))
+    .await
+    .map(user_created)
+    .unwrap_or_else(failed_create_user)
+}
+
+fn user_created(user: User) -> HttpResponse {
+  HttpResponse::Created()
+    .content_type("application/json")
+    .append_header((header::LOCATION, format!("/v1/users/{}", user.uuid)))
+    .json(CreatedRto::from(user))
+}
+
+fn failed_create_user(error: UserRepositoryError) -> HttpResponse {
+  HttpResponse::InternalServerError().finish()
+}
+
+impl From<CreateUserDto> for CreateUser {
+  fn from(dto: CreateUserDto) -> Self {
+    Self {
+      uuid: custom_nanoid(),
+      user_name: dto.user_name,
+      role: dto.role,
+    }
+  }
+}
+
+// Transform User domain to RTO
+impl From<User> for CreatedRto {
+  fn from(user: User) -> Self {
+    Self { uuid: user.uuid }
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use std::sync::RwLock;
+  use std::sync::{Arc, RwLock};
 
-  use actix_web::http::StatusCode;
+  use actix_web::{http::StatusCode, HttpRequest};
   use chrono::Utc;
   use nanoid::nanoid;
-use repository::user_repository::tests::InMemoryUserRepository;
+  use repository::user_repository::tests::InMemoryUserRepository;
 
-  use crate::{
-    helpers::tests::{http_request, parse_http_response},
-    shared::{
-      config::Config,
-    },
+  use crate::helpers::tests::{
+    create_fake_access_token_claims, http_request, parse_http_response,
   };
 
   use super::*;
 
   #[actix_web::test]
   async fn test_get_user_successful() {
-    let jwt_secret = nanoid!();
-    let uuid = nanoid!();
+    let jwt_secret = custom_nanoid();
+    let uuid = custom_nanoid();
 
     let user = User {
       uuid: uuid.clone(),
@@ -194,19 +142,11 @@ use repository::user_repository::tests::InMemoryUserRepository;
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(
-        Config {
-          master_key: nanoid!(),
-          jwt_secret: jwt_secret.clone(),
-        }
-      ),
-      web::Data::new(
-        InMemoryUserRepository {
-          users: RwLock::new(vec![user]),
-        }
-      ),
+      web::Data::from(Arc::new(InMemoryUserRepository {
+        users: RwLock::new(vec![user]),
+      })),
       web::Path::from(GetUserDto { uuid: uuid.clone() }),
-      request.clone(),
+      create_fake_access_token_claims(),
     )
     .await;
 
@@ -221,8 +161,8 @@ use repository::user_repository::tests::InMemoryUserRepository;
 
   #[actix_web::test]
   async fn test_get_user_uuid_not_found() {
-    let jwt_secret = nanoid!();
-    let uuid = nanoid!();
+    let jwt_secret = custom_nanoid();
+    let uuid = custom_nanoid();
 
     let user = User {
       uuid: uuid.clone(),
@@ -235,19 +175,11 @@ use repository::user_repository::tests::InMemoryUserRepository;
     let request: HttpRequest = http_request(&jwt_secret);
 
     let responder = get_user(
-      web::Data::new(
-        Config {
-          master_key: nanoid!(),
-          jwt_secret: jwt_secret.clone(),
-        }
-      ),
-      web::Data::new(
-        InMemoryUserRepository {
-          users: RwLock::new(vec![user]),
-        }
-      ),
-      web::Path::from(GetUserDto { uuid: nanoid!() }),
-      request.clone(),
+      web::Data::from(Arc::new(InMemoryUserRepository {
+        users: RwLock::new(vec![user]),
+      })),
+      web::Path::from(GetUserDto { uuid: custom_nanoid() }),
+      create_fake_access_token_claims(),
     )
     .await;
 

@@ -21,9 +21,11 @@ pub enum UserRepositoryError {
 }
 
 pub trait UserRepository {
-  async fn find_one(&self, uuid: String) -> Option<User>;
-  async fn create(&self, create_user: CreateUser)
-    -> Result<User, UserRepositoryError>;
+  async fn find_one(&self, uuid: &str) -> Option<User>;
+  async fn create(
+    &self,
+    create_user: CreateUser,
+  ) -> Result<User, UserRepositoryError>;
 }
 
 pub struct UserRepositoryImpl {
@@ -39,7 +41,7 @@ impl UserRepositoryImpl {
 }
 
 impl UserRepository for UserRepositoryImpl {
-  async fn find_one(&self, uuid: String) -> Option<User> {
+  async fn find_one(&self, uuid: &str) -> Option<User> {
     let rows = sqlx::query("SELECT * FROM users WHERE uuid = ? LIMIT 1")
       .bind(uuid)
       .map(|row: PgRow| User::from(row))
@@ -108,7 +110,7 @@ pub mod tests {
   }
 
   impl UserRepository for InMemoryUserRepository {
-    async fn find_one(&self, uuid: String) -> Option<User> {
+    async fn find_one(&self, uuid: &str) -> Option<User> {
       let users = self.users.read().unwrap(); // Acquire read lock
       users.iter().find(|user| user.uuid == uuid).cloned()
     }

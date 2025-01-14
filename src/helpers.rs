@@ -1,35 +1,28 @@
 #[cfg(test)]
 pub mod tests {
-  use crate::shared::role::Role;
+  use crate::{
+    custom_nanoid, shared::role::Role, users::model::access_token_claims::AccessTokenClaims
+  };
   use actix_web::{
     http::{header::HeaderValue, StatusCode},
     HttpRequest, Responder,
   };
-  use fake::{faker::internet::en::SafeEmail, Fake};
   use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-  use nanoid::nanoid;
-  use serde::{de::DeserializeOwned, Deserialize, Serialize};
+  use serde::de::DeserializeOwned;
 
-  #[derive(Serialize, Deserialize)]
-  pub struct FakeAccessTokenClaims {
-    uuid: String,
-    role: Role,
-    sub: String,
-    iat: u64,
-    exp: u64,
+  pub fn create_fake_access_token_claims() -> AccessTokenClaims {
+    AccessTokenClaims {
+      uuid: custom_nanoid(),
+      role: Role::Manager,
+      iat: 0,
+      exp: 253402300799,
+    }
   }
 
   pub fn create_fake_access_token(jwt_secret: &str) -> String {
-    let fake_claims = FakeAccessTokenClaims {
-      uuid: nanoid!(),
-      role: Role::Manager,
-      sub: SafeEmail().fake(),
-      iat: 0,
-      exp: 253402300799,
-    };
     encode(
       &Header::new(Algorithm::HS256),
-      &fake_claims,
+      &create_fake_access_token_claims(),
       &EncodingKey::from_secret(jwt_secret.as_ref()),
     )
     .unwrap()
@@ -65,8 +58,20 @@ pub mod tests {
     let service_response =
       actix_web::test::TestRequest::default().to_srv_response(http_response);
 
-    // Now you can use `read_body_json` on the `ServiceResponse`:
-    assert_eq!(service_response.status(), status_code);
-    actix_web::test::read_body_json(service_response).await
+    let service_status_code = service_response.status();
+    // Read the raw body as a string
+    let body_bytes = actix_web::test::read_body(service_response).await;
+    let body_string = String::from_utf8(body_bytes.to_vec())
+      .expect("Response body contains invalid UTF-8");
+
+    // Print the raw string body
+    println!("Response Body (String): {}", body_string);
+
+    // Ensure the status matches the expected status_code
+    assert_eq!(service_status_code, status_code);
+
+    // Deserialize the string body into the target type T
+    serde_json::from_str(&body_string)
+      .expect("Failed to deserialize response body")
   }
 }

@@ -4,12 +4,12 @@ use crate::shared::role::Role;
 
 use super::user::User;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccessTokenClaims {
-  uuid: String,
+  pub uuid: String,
   pub role: Role,
-  exp: usize,
-  iat: usize,
+  pub exp: usize,
+  pub iat: usize,
 }
 
 impl AccessTokenClaims {
